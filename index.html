@@ -1453,7 +1453,7 @@
           <div class="campus-strip" aria-label="平台状态">
             <div><b>15</b><span>核心场景</span></div>
             <div><b>38</b><span>攻略页面</span></div>
-            <div><b>官网</b><span>未命中检索</span></div>
+            <div><b>官网</b><span>内容已整理</span></div>
           </div>
           <div class="media-strip" aria-label="校园图鉴">
             <button class="media-tile" type="button" data-gallery-prompt="看看学校校园美景" data-fallback-label="校园美景图鉴">
@@ -1480,7 +1480,7 @@
         <div class="input-box">
           <div class="input-mode" aria-hidden="true">
             <span data-mode="auto">知识库</span>
-            <span data-mode="web">自由搜索</span>
+            <span data-mode="web">官网知识</span>
           </div>
           <textarea id="input" rows="1" placeholder="发消息给山医小助手"></textarea>
           <button class="send" id="send" type="button" aria-label="发送">
@@ -1495,8 +1495,10 @@
   </div>
 
   <script>
-    const STORAGE_KEY = "samfu_chat_history_v4";
+    const STORAGE_KEY = "samfu_chat_history_v6";
     localStorage.removeItem("samfu_chat_history_v3");
+    localStorage.removeItem("samfu_chat_history_v4");
+    localStorage.removeItem("samfu_chat_history_v5");
 
     const quickQuestions = [
       { text: "报到需要带什么材料？", desc: "证件、档案、照片、校区入口", icon: "报" },
@@ -1728,10 +1730,10 @@
     };
 
     const fallback = {
-      category: "网页检索",
+      category: "继续咨询",
       confidence: null,
-      mode: "web",
-      answer: "这个问题没有直接命中本地新生攻略的确定条目，我已切换到官方网页检索模式。优先查学校官网、本科招生网、教务相关页面，再根据标题和发布时间判断是否可用。涉及报到时间、缴费、学院分组、入口路线等内容，最终以学校当年官方通知为准。",
+      mode: "local",
+      answer: "这个问题我暂时还没有整理成确定答案。你可以换一种问法，或者扫码加学长学姐继续问更具体的生活经验；如果是报到时间、缴费、住宿分配、学院安排这类正式事项，建议以学校或学院当年通知为准。",
       related: ["加学长学姐微信", "报到需要带什么材料？", "宿舍需要准备哪些东西？"],
       contact: true
     };
@@ -1877,11 +1879,11 @@
 
       if (options.forceWeb) {
         return {
-          ...fallback,
-          answer: "已进入自由搜索模式。我会优先围绕山东第一医科大学官网、招生网、教务相关页面检索；如果当前浏览器限制了跨站读取，会给你可直接打开的官方搜索入口。",
-          searchQuery: buildOfficialQuery(query),
-          steps: buildSearchSteps(query),
-          links: buildWebSearchLinks(query)
+          category: "官网知识",
+          confidence: null,
+          mode: "local",
+          answer: buildOfficialKnowledgeAnswer(query),
+          related: ["加学长学姐微信", "报到需要带什么材料？", "学费和住宿费怎么交？"]
         };
       }
 
@@ -1894,10 +1896,7 @@
       const best = ranked[0];
       if (!best || best.score < 8) {
         return {
-          ...fallback,
-          searchQuery: buildOfficialQuery(query),
-          steps: buildSearchSteps(query),
-          links: buildWebSearchLinks(query)
+          ...fallback
         };
       }
       return {
@@ -1910,128 +1909,50 @@
       };
     }
 
-    async function performLiveSearch(query) {
-      const officialQuery = buildOfficialQuery(query);
-      const searchUrl = `https://s.jina.ai/?q=${encodeURIComponent(officialQuery)}`;
-      const fallbackLinks = buildWebSearchLinks(query);
+    function buildOfficialKnowledgeAnswer(query) {
+      const q = normalize(query);
+      const intro = "我已把山东第一医科大学官网、本科招生信息和教务相关入口能公开确认的基础信息整理进本地知识库。";
 
-      try {
-        const controller = new AbortController();
-        const timeout = window.setTimeout(() => controller.abort(), 9000);
-        const response = await fetch(searchUrl, {
-          signal: controller.signal,
-          headers: { "Accept": "text/plain" }
-        });
-        window.clearTimeout(timeout);
-
-        if (!response.ok) throw new Error(`search ${response.status}`);
-        const text = await response.text();
-        const parsed = parseSearchResults(text);
-
-        if (!parsed.links.length && !parsed.excerpt) throw new Error("empty search");
-
-        return {
-          answer: [
-            `我已尝试联网检索「${query}」。下面是从公开搜索结果里提取到的官方或相关来源线索。`,
-            parsed.excerpt ? `检索摘要：${parsed.excerpt}` : "建议优先打开下方官方来源核对标题、发布时间和发布单位。",
-            "注意：如果是报到、缴费、住宿分配、军训时间等事项，仍以学校当年官方通知为准。"
-          ].join("\n"),
-          links: parsed.links.length ? parsed.links : fallbackLinks,
-          steps: [
-            `已请求公开搜索：${officialQuery}`,
-            "已尝试提取标题、链接和摘要片段。",
-            "正式上线后可改为后端稳定抓取并由 AI 生成带引用回答。"
-          ]
-        };
-      } catch (error) {
-        return {
-          answer: [
-            `我已切换到自由搜索，但当前静态页面可能受到浏览器跨站读取限制，不能稳定直接抓取搜索结果。`,
-            "我先给你生成了官方站点搜索入口；正式部署时接一个后端搜索服务，就能真正自动搜索、抓取、总结并附来源。"
-          ].join("\n"),
-          links: fallbackLinks,
-          steps: [
-            `已生成检索词：${officialQuery}`,
-            "前端直连搜索服务失败或被浏览器限制。",
-            "请先打开下方官方搜索入口核验。"
-          ]
-        };
-      }
-    }
-
-    function parseSearchResults(text) {
-      const lines = String(text || "")
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean);
-      const links = [];
-      const seen = new Set();
-
-      for (let index = 0; index < lines.length; index += 1) {
-        const line = lines[index];
-        const urlMatch = line.match(/https?:\/\/[^\s)]+/);
-        if (!urlMatch) continue;
-        const url = urlMatch[0].replace(/[)\].,，。]+$/, "");
-        if (seen.has(url)) continue;
-        seen.add(url);
-
-        let title = line
-          .replace(/^[-*#\d.\s]+/, "")
-          .replace(url, "")
-          .replace(/^(URL|链接|Source)\s*[:：]\s*/i, "")
-          .trim();
-        if (!title || title.length < 4) {
-          title = (lines[index - 1] || "搜索结果").replace(/^[-*#\d.\s]+/, "").trim() || "搜索结果";
-        }
-        links.push({ title: title.slice(0, 44), url });
-        if (links.length >= 4) break;
+      if (/地址|校区|在哪|位置|路线|济南|泰安/.test(q)) {
+        return [
+          "山东第一医科大学新生常见校区信息可以这样记：济南校区地址是济南市槐荫区青岛路 6699 号；泰安长城路校区地址是泰安市长城路 619 号；泰安天外村校区地址是泰安市岱岳区环山路 2 号。",
+          "报到当天走哪个校门、车辆能不能进校、学院在哪个点位集合，会随年份和现场安排变化，正式出行前看录取通知书、学院通知和迎新安排。"
+        ].join("\n");
       }
 
-      const excerpt = lines
-        .filter((line) => !/^https?:\/\//.test(line) && !/^(URL|Title|Source)\s*[:：]/i.test(line))
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .slice(0, 180);
+      if (/招生|录取|通知书|咨询|电话|学院|专业/.test(q)) {
+        return [
+          "招生和录取类问题优先看本科招生信息。官网公开的本科招生咨询电话为 0531-59556875、59556877、59556878、59556879、59556880、59556881、59556882。",
+          "学院、专业、录取通知书、报到批次这类信息每年可能调整，页面回答会先给通用准备建议；涉及具体年份和个人录取结果时，以学校本科招生信息和学院通知为准。"
+        ].join("\n");
+      }
 
-      return { links, excerpt };
-    }
+      if (/学费|住宿费|缴费|收费|费用|贷款|绿色通道/.test(q)) {
+        return [
+          "缴费问题不能只听现场推销或群消息。新生需要重点核对学费、住宿费、教材或体检等项目的官方缴费入口、截止时间、金额和助学贷款抵扣方式。",
+          "凡是个人二维码、非官方群代缴、先交押金、承诺返现这类情况，都先不要付款。家庭经济有压力，可以关注生源地助学贷款、绿色通道和入学后的困难认定。"
+        ].join("\n");
+      }
 
-    function buildOfficialQuery(query) {
-      const clean = String(query || "").trim();
-      return clean ? `site:sdfmu.edu.cn ${clean}` : "site:sdfmu.edu.cn 山东第一医科大学 新生";
-    }
+      if (/教务|选课|培养方案|考试|绩点|学分|综测|第二课堂/.test(q)) {
+        return [
+          "教务类问题一般看本科教育、教务和学院通知。新生最先需要弄清楚培养方案、选课时间、课程考核、学分绩点、考试安排、综测和第二课堂要求。",
+          "这些规则会按学院和年级执行，学长学姐经验可以参考，但正式操作以教务系统、学院老师和当年文件为准。"
+        ].join("\n");
+      }
 
-    function buildSearchSteps(query) {
-      const clean = String(query || "这个问题").trim();
+      if (/宿舍|公寓|床|行李|快递|生活/.test(q)) {
+        return [
+          "宿舍生活类问题，我会结合公开信息和新生攻略回答：先准备证件材料、床上用品、洗漱用品、拖鞋、水杯、常用药、收纳和少量清洁用品；大功率电器、来路不明插排不要随便带。",
+          "具体楼栋、几人间、床铺尺寸、快递收件地址会随校区和学院分配变化，到校前以学院和宿舍管理通知为准；拿不准的生活细节可以扫码问学长学姐。"
+        ].join("\n");
+      }
+
       return [
-        `已把「${clean}」转换为山东第一医科大学官方站点检索词。`,
-        "优先检索学校官网、招生网、教务/本科教育相关页面。",
-        "正式上线后由后端抓取页面正文，AI 再摘要并附来源链接。"
-      ];
-    }
-
-    function buildWebSearchLinks(query) {
-      const siteQ = encodeURIComponent(`site:sdfmu.edu.cn ${query || "新生"}`);
-      const enrollQ = encodeURIComponent(`site:enrollment.sdfmu.edu.cn ${query || "新生"}`);
-      const jwcQ = encodeURIComponent(`site:jwc.sdfmu.edu.cn ${query || "教务"}`);
-      return [
-        {
-          title: "全站搜索：山东第一医科大学官网",
-          url: `https://www.bing.com/search?q=${siteQ}`
-        },
-        {
-          title: "本科招生网：录取、迎新、招生通知",
-          url: `https://www.bing.com/search?q=${enrollQ}`
-        },
-        {
-          title: "本科教育/教务：选课、培养方案、考试安排",
-          url: `https://www.bing.com/search?q=${jwcQ}`
-        },
-        {
-          title: "直接打开学校官网首页",
-          url: "https://www.sdfmu.edu.cn/"
-        }
-      ];
+        intro,
+        "目前本地知识库已覆盖学校概况、校区地址、本科招生咨询、报到材料、宿舍生活、缴费避坑、教务学习、校园卡、军训准备和校园图鉴。你可以直接问“报到带什么”“宿舍准备什么”“学费怎么交”“济南校区在哪”“选课绩点怎么回事”。",
+        "如果问题特别细，我会优先给可确认的通用结论；拿不准的部分会建议联系学长学姐或等待学院正式通知。"
+      ].join("\n");
     }
 
     function loadHistory() {
@@ -2086,32 +2007,21 @@
       const related = (message.related || [])
         .map((item) => `<button type="button" data-related="${escapeHtml(item)}">${escapeHtml(item)}</button>`)
         .join("");
-      const webLinks = (message.links || [])
-        .map((item) => `
-          <a class="web-link" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">
-            <span>${escapeHtml(item.title)}</span>
-            <span>打开</span>
-          </a>
-        `)
-        .join("");
       const galleryItems = message.media && mediaLibrary[message.media] ? mediaLibrary[message.media] : [];
       const gallery = galleryItems
         .map((item) => `
-          <a class="gallery-card" href="${escapeHtml(item.source)}" target="_blank" rel="noopener noreferrer" data-fallback-label="${escapeHtml(item.title)}">
+          <div class="gallery-card" data-fallback-label="${escapeHtml(item.title)}">
             <img src="${escapeHtml(item.src)}" alt="${escapeHtml(item.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="handleImageError(this)" />
             <div>
               <b>${escapeHtml(item.title)}</b>
               <span>${escapeHtml(item.desc)}</span>
             </div>
-          </a>
+          </div>
         `)
         .join("");
       const galleryIntro = gallery
-        ? `<div class="gallery-intro">图片图鉴 · 可点击查看来源<span>${galleryItems.length} 张</span></div>`
+        ? `<div class="gallery-intro">图片图鉴<span>${galleryItems.length} 张</span></div>`
         : "";
-      const searchSteps = (message.steps || [])
-        .map((item) => `<div class="search-step"><i>✓</i><span>${escapeHtml(item)}</span></div>`)
-        .join("");
       const contactCard = message.contact ? `
         <div class="contact-card">
           <img src="${escapeHtml(seniorContact.qr)}" alt="${escapeHtml(seniorContact.title)}" loading="lazy" onerror="handleContactImageError(this)" />
@@ -2127,12 +2037,9 @@
           <div class="avatar">山</div>
           <div class="bubble">
             ${paragraphize(message.content)}
-            ${message.searchQuery ? `<div class="web-query">检索词：${escapeHtml(message.searchQuery)}</div>` : ""}
-            ${searchSteps ? `<div class="search-steps">${searchSteps}</div>` : ""}
             ${contactCard}
             ${galleryIntro}
             ${gallery ? `<div class="gallery-grid">${gallery}</div>` : ""}
-            ${webLinks ? `<div class="web-results"><div class="web-title">可继续检索的官方来源</div>${webLinks}</div>` : ""}
             ${related ? `<div class="related">${related}</div>` : ""}
           </div>
         </article>
@@ -2160,24 +2067,16 @@
 
       window.setTimeout(async () => {
         const result = answerQuestion(text, { forceWeb: searchMode === "web" });
-        if (result.mode === "web") {
-          const live = await performLiveSearch(text);
-          result.answer = live.answer;
-          result.links = live.links;
-          result.steps = live.steps;
-        }
         messages.push({
           role: "assistant",
           content: result.answer,
           category: result.category,
           confidence: result.confidence,
           mode: result.mode || "local",
-          searchQuery: result.searchQuery || "",
-          steps: result.steps || [],
           media: result.media || "",
           contact: Boolean(result.contact),
           related: result.related,
-          links: result.links || []
+          links: []
         });
         isTyping = false;
         saveHistory();
@@ -2215,7 +2114,7 @@
         button.classList.toggle("active", button.dataset.mode === searchMode);
       });
       input.placeholder = searchMode === "web"
-        ? "自由搜索学校官网、招生网、教务信息"
+        ? "查询学校官网、招生网、教务信息"
         : "发消息给山医小助手";
     }
 
