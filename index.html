@@ -328,6 +328,43 @@
     .bubble ul { margin: 8px 0 0; padding-left: 18px; }
     .bubble li { margin: 4px 0; }
 
+    .sticker-row {
+      margin: 0 0 10px;
+      display: flex;
+      align-items: center;
+    }
+
+    .sticker-badge {
+      min-height: 32px;
+      border: 1px solid rgba(45, 58, 240, .12);
+      border-radius: 999px;
+      padding: 4px 10px 4px 5px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: #2a3f93;
+      background:
+        linear-gradient(135deg, rgba(45, 58, 240, .08), rgba(18, 183, 215, .08)),
+        rgba(245, 248, 255, .92);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .86);
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1.25;
+      text-wrap: balance;
+    }
+
+    .sticker-emoji {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: #fff;
+      box-shadow: 0 5px 14px rgba(45, 58, 240, .12);
+      font-size: 15px;
+      line-height: 1;
+    }
+
     .answer-meta,
     .tag {
       display: none !important;
@@ -2816,6 +2853,21 @@
         .join("");
     }
 
+    function getMessageSticker(message) {
+      const category = normalize(message.category || "");
+      const media = message.media || "";
+      if (message.contact) return { emoji: "🤝", label: "学长学姐在线" };
+      if (media) return { emoji: "📸", label: "图鉴已备好" };
+      if (category.includes("校园卡")) return { emoji: "📡", label: "避坑小贴士" };
+      if (category.includes("宿舍")) return { emoji: "🛏️", label: "宿舍小贴士" };
+      if (category.includes("报到")) return { emoji: "🎒", label: "新生准备" };
+      if (category.includes("缴费") || category.includes("费用")) return { emoji: "🧾", label: "缴费提醒" };
+      if (category.includes("军训")) return { emoji: "☀️", label: "军训提醒" };
+      if (category.includes("官网") || category.includes("学校信息")) return { emoji: "📌", label: "小医整理好了" };
+      if (category.includes("学习") || category.includes("选课")) return { emoji: "📚", label: "学习小帮手" };
+      return { emoji: "✨", label: "小医来啦" };
+    }
+
     function render() {
       app.classList.toggle("has-chat", messages.length > 0 || isTyping);
       messagesEl.innerHTML = messages.map(renderMessage).join("") + (isTyping ? renderTyping() : "");
@@ -2865,10 +2917,17 @@
           </div>
         </div>
       ` : "";
+      const sticker = getMessageSticker(message);
+      const stickerHtml = `
+        <div class="sticker-row">
+          <span class="sticker-badge"><span class="sticker-emoji">${escapeHtml(sticker.emoji)}</span>${escapeHtml(sticker.label)}</span>
+        </div>
+      `;
       return `
         <article class="message ai">
           <div class="avatar">山</div>
           <div class="bubble">
+            ${stickerHtml}
             ${paragraphize(message.content)}
             ${contactCard}
             ${galleryIntro}
